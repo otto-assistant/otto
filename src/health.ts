@@ -29,6 +29,7 @@ export interface ConfigHealth {
   opencodeJson: "ok" | "missing" | "error"
   agentMemoryJson: "ok" | "missing"
   memoryPluginEnabled: boolean
+  plugins: string[]
   kimakiRunning: boolean
 }
 
@@ -41,10 +42,11 @@ export function checkConfigHealth(): ConfigHealth {
   const agentMemoryJson: ConfigHealth["agentMemoryJson"] = fs.existsSync(agentMemoryPath) ? "ok" : "missing"
 
   const config = readOpenCodeConfig()
-  const memoryPluginEnabled = (config.plugin ?? []).includes("opencode-agent-memory")
+  const configuredPlugins = config.plugin ?? []
+  const memoryPluginEnabled = configuredPlugins.includes("opencode-agent-memory")
   const kimakiRunning = isKimakiRunning()
 
-  return { opencodeJson, agentMemoryJson, memoryPluginEnabled, kimakiRunning }
+  return { opencodeJson, agentMemoryJson, memoryPluginEnabled, plugins: configuredPlugins, kimakiRunning }
 }
 
 export function checkDirectoryHealth(): HealthResult[] {

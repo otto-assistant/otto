@@ -16,7 +16,8 @@ describe("installer", () => {
     const result = installMissingPackages(getInstalled, install)
 
     expect(result).toContain("opencode-ai")
-    expect(result).toContain("opencode-agent-memory")
     expect(result).not.toContain("kimaki")
+    // opencode-agent-memory is a plugin, not a global npm package
+    expect(result).not.toContain("opencode-agent-memory")
   })
 })

@@ -14,6 +14,7 @@ const subCommand = args[1] ?? ""
 async function cmdInstall(): Promise<void> {
   console.log("Otto install — conservative mode\n")
 
+  // 1. Install missing global npm packages (CLI tools only)
   const installed = installMissingPackages(getInstalledVersion)
   if (installed.length > 0) {
     console.log(`Installed: ${installed.join(", ")}`)
@@ -21,21 +22,32 @@ async function cmdInstall(): Promise<void> {
     console.log("All packages already installed.")
   }
 
+  // 2. Merge plugins into opencode.json (opencode resolves them from npm itself)
+  let configChanged = false
   const config = readOpenCodeConfig()
-  const merged = mergePlugins(config, "opencode-agent-memory")
-  const configChanged = writeOpenCodeConfig(merged)
+  let merged = config
+  for (const plugin of MANIFEST.plugins) {
+    merged = mergePlugins(merged, plugin)
+  }
+  configChanged = writeOpenCodeConfig(merged) || configChanged
 
   if (configChanged) {
-    console.log("Updated opencode.json — added opencode-agent-memory plugin")
+    console.log(`Updated opencode.json — added plugins: ${MANIFEST.plugins.join(", ")}`)
   }
 
+  // 3. Ensure agent-memory.json exists
   const created = ensureAgentMemoryConfig()
   if (created) {
     console.log("Created agent-memory.json with defaults")
   }
 
+  // 4. Restart kimaki if needed — but NOT if running inside kimaki
+  //    (kimaki restart kills the current opencode session)
+  const runningInsideKimaki = !!process.env.KIMAKI
   if (configChanged || installed.length > 0) {
-    if (hasKimakiBinary()) {
+    if (runningInsideKimaki) {
+      console.log("\n⚠ Changes require kimaki restart. Run `kimaki restart` manually when ready.")
+    } else if (hasKimakiBinary()) {
       console.log("Restarting kimaki...")
       try {
         restartKimaki()
@@ -53,6 +65,7 @@ async function cmdInstall(): Promise<void> {
 async function cmdUpgrade(mode: "stable" | "latest"): Promise<void> {
   console.log(`Otto upgrade — mode: ${mode}\n`)
 
+  // Show plan
   console.log("Will upgrade:")
   for (const name of Object.keys(MANIFEST.packages)) {
     const current = getInstalledVersion(name)
@@ -62,16 +75,25 @@ async function cmdUpgrade(mode: "stable" | "latest"): Promise<void> {
     console.log(`  ${name}: ${current ?? "not installed"} → ${target}`)
   }
 
+  // Upgrade
   for (const name of Object.keys(MANIFEST.packages)) {
     console.log(`Upgrading ${name}...`)
     upgradePackage(name, mode)
   }
 
+  // Ensure plugins are in config
   const config = readOpenCodeConfig()
-  const merged = mergePlugins(config, "opencode-agent-memory")
+  let merged = config
+  for (const plugin of MANIFEST.plugins) {
+    merged = mergePlugins(merged, plugin)
+  }
   writeOpenCodeConfig(merged)
 
-  if (hasKimakiBinary()) {
+  // Restart — but NOT inside kimaki session
+  const runningInsideKimaki = !!process.env.KIMAKI
+  if (runningInsideKimaki) {
+    console.log("\n⚠ Changes require kimaki restart. Run `kimaki restart` manually when ready.")
+  } else if (hasKimakiBinary()) {
     console.log("Restarting kimaki...")
     try {
       restartKimaki()
@@ -100,6 +122,7 @@ async function cmdStatus(): Promise<void> {
   const configHealth = checkConfigHealth()
   console.log(`  opencode.json: ${configHealth.opencodeJson}`)
   console.log(`  agent-memory.json: ${configHealth.agentMemoryJson}`)
+  console.log(`  plugins: ${configHealth.plugins.length > 0 ? configHealth.plugins.join(", ") : "(none)"}`)
   console.log(`  memory plugin: ${configHealth.memoryPluginEnabled ? "enabled" : "NOT enabled"}`)
   console.log(`  kimaki process: ${configHealth.kimakiRunning ? "running" : "not running"}`)
 }
