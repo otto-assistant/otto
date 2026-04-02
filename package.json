@@ -1,0 +1,41 @@
+{
+  "name": "otto",
+  "version": "0.0.1",
+  "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + opencode-agent-memory",
+  "type": "module",
+  "bin": {
+    "otto": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["src", "dist"],
+  "keywords": ["otto", "opencode", "kimaki", "ai-agent", "distribution"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SerhiiD/otto.git"
+  },
+  "scripts": {
+    "build": "rm -rf dist *.tsbuildinfo && tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.0"
+  }
+}
