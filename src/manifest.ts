@@ -9,7 +9,7 @@ export interface Manifest {
 }
 
 export const MANIFEST: Manifest = {
-  version: "0.0.1",
+  version: "0.0.2",
   packages: {
     "opencode-ai": ">=1.0.115",
     "kimaki": ">=0.4.0",

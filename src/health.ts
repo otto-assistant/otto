@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { getInstalledVersion } from "./detect.js"
-import { readOpenCodeConfig } from "./config.js"
+import { readOpenCodeConfigState, readOttoConfig, type OpenCodeConfig } from "./config.js"
 import { MANIFEST, OPENCODE_CONFIG_DIR, KIMAKI_DATA_DIR } from "./manifest.js"
 import { isKimakiRunning } from "./lifecycle.js"
 
@@ -18,6 +18,24 @@ export interface PackageCheck {
   status: "ok" | "missing"
 }
 
+const SUBAGENT_POLICY_MARKER = "Otto subagent policy (must follow):"
+
+function subagentPolicyInjectedInPrompts(config: OpenCodeConfig): boolean {
+  const agent = config.agent
+  if (!agent || typeof agent !== "object" || Array.isArray(agent)) {
+    return false
+  }
+  for (const value of Object.values(agent as Record<string, unknown>)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const prompt = (value as { prompt?: unknown }).prompt
+      if (typeof prompt === "string" && prompt.includes(SUBAGENT_POLICY_MARKER)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 export function checkPackagePresence(): PackageCheck[] {
   return Object.entries(MANIFEST.packages).map(([name, required]) => {
     const installed = getInstalledVersion(name)
@@ -27,26 +45,53 @@ export function checkPackagePresence(): PackageCheck[] {
 
 export interface ConfigHealth {
   opencodeJson: "ok" | "missing" | "error"
+  ottoJson: "ok" | "missing"
   agentMemoryJson: "ok" | "missing"
   memoryPluginEnabled: boolean
+  subagentPolicyInjected: boolean
+  subagentThreadsEnabled: boolean
+  subagentThreadsAskBeforeDelete: boolean
+  subagentThreadsAutoDelete: boolean
   plugins: string[]
   kimakiRunning: boolean
 }
 
 export function checkConfigHealth(): ConfigHealth {
   const configDir = OPENCODE_CONFIG_DIR()
-  const opencodeJsonPath = path.join(configDir, "opencode.json")
   const agentMemoryPath = path.join(configDir, "agent-memory.json")
+  const ottoJsonPath = path.join(configDir, "otto.json")
 
-  const opencodeJson: ConfigHealth["opencodeJson"] = fs.existsSync(opencodeJsonPath) ? "ok" : "missing"
+  const state = readOpenCodeConfigState()
+  const opencodeJson: ConfigHealth["opencodeJson"] =
+    state.status === "missing" ? "missing" : state.status === "invalid" ? "error" : "ok"
   const agentMemoryJson: ConfigHealth["agentMemoryJson"] = fs.existsSync(agentMemoryPath) ? "ok" : "missing"
+  const ottoJson: ConfigHealth["ottoJson"] = fs.existsSync(ottoJsonPath) ? "ok" : "missing"
 
-  const config = readOpenCodeConfig()
+  const config = state.status === "ok" ? state.config : {}
   const configuredPlugins = config.plugin ?? []
   const memoryPluginEnabled = configuredPlugins.includes("opencode-agent-memory")
+
+  const subagentPolicyInjected = subagentPolicyInjectedInPrompts(config)
+
+  // Read Otto config from otto.json (separate from opencode.json)
+  const ottoConfig = readOttoConfig()
+  const subagentThreadsEnabled = ottoConfig.subagentThreads.enabled
+  const subagentThreadsAskBeforeDelete = ottoConfig.subagentThreads.askBeforeDelete
+  const subagentThreadsAutoDelete = ottoConfig.subagentThreads.autoDeleteOnComplete
   const kimakiRunning = isKimakiRunning()
 
-  return { opencodeJson, agentMemoryJson, memoryPluginEnabled, plugins: configuredPlugins, kimakiRunning }
+  return {
+    opencodeJson,
+    ottoJson,
+    agentMemoryJson,
+    memoryPluginEnabled,
+    subagentPolicyInjected,
+    subagentThreadsEnabled,
+    subagentThreadsAskBeforeDelete,
+    subagentThreadsAutoDelete,
+    plugins: configuredPlugins,
+    kimakiRunning,
+  }
 }
 
 export function checkDirectoryHealth(): HealthResult[] {

@@ -1,6 +1,6 @@
 {
   "name": "otto",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + opencode-agent-memory",
   "type": "module",
   "bin": {
@@ -23,7 +23,7 @@
     "url": "git+https://github.com/SerhiiD/otto.git"
   },
   "scripts": {
-    "build": "rm -rf dist *.tsbuildinfo && tsc",
+    "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",

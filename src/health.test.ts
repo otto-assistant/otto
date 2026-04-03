@@ -19,8 +19,13 @@ describe("health", () => {
   it("checkConfigHealth returns structured result", () => {
     const result = checkConfigHealth()
     expect(result).toHaveProperty("opencodeJson")
+    expect(result).toHaveProperty("ottoJson")
     expect(result).toHaveProperty("agentMemoryJson")
     expect(result).toHaveProperty("memoryPluginEnabled")
+    expect(result).toHaveProperty("subagentPolicyInjected")
+    expect(result).toHaveProperty("subagentThreadsEnabled")
+    expect(result).toHaveProperty("subagentThreadsAskBeforeDelete")
+    expect(result).toHaveProperty("subagentThreadsAutoDelete")
     expect(result).toHaveProperty("plugins")
     expect(result).toHaveProperty("kimakiRunning")
     expect(Array.isArray(result.plugins)).toBe(true)

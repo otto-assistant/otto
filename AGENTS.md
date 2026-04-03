@@ -24,6 +24,7 @@ memory_read {"label":"persona","scope":"global"}
 ### Манифест
 
 `src/manifest.ts` — єдине місце з версіями:
+- `version` — версія самого Otto (дзеркало `package.json`), показується в `otto status`
 - `packages` — мінімальні requirements (ranges)
 - `pinned` — exact versions для `otto upgrade stable`
 - `plugins` — список плагінів для merge у opencode.json
@@ -35,8 +36,8 @@ src/
 ├── cli.ts          CLI entry (otto install/upgrade/status/doctor)
 ├── manifest.ts     Версії upstream пакетів (pinned + ranges + plugins)
 ├── detect.ts       Detect встановлених npm пакетів (npm list -g --json)
-├── config.ts       Merge opencode.json plugin[], create agent-memory.json
-├── installer.ts    npm global install/upgrade (stable/latest)
+├── config.ts       Merge opencode.json plugin[], otto policy, agent-memory.json
+├── installer.ts    npm global install/upgrade + planStableUpgrades()
 ├── lifecycle.ts    kimaki restart + process detection
 ├── health.ts       Health checks (packages, config, directories)
 └── index.ts        Re-exports для programmatic usage
@@ -53,8 +54,11 @@ otto install
     ├─► installer.ts: installMissingPackages() — тільки для packages, не plugins
     │       └─► npm install -g <name>@<pinned>
     │
-    ├─► config.ts: readOpenCodeConfig() → mergePlugins() → writeOpenCodeConfig()
-    │       └─► ~/.config/opencode/opencode.json (додає plugins з маніфесту)
+    ├─► config.ts: readOpenCodeConfig()
+    │       ├─► mergePlugins() — plugins з маніфесту → plugin[]
+    │       ├─► mergeOttoConfig() — дефолти otto.subagentThreads у opencode.json
+    │       ├─► mergeAgentPrompts() — додає policy-текст до кожного agent.*.prompt
+    │       └─► writeOpenCodeConfig() → ~/.config/opencode/opencode.json
     │
     ├─► config.ts: ensureAgentMemoryConfig()
     │       └─► ~/.config/opencode/agent-memory.json (створює якщо нема)
@@ -62,6 +66,22 @@ otto install
     └─► lifecycle.ts: kimaki restart (якщо НЕ всередині kimaki-сесії)
             └─► перевіряє process.env.KIMAKI перед restart
 ```
+
+#### `otto upgrade stable` — план оновлень
+
+Єдине джерело правди, **які** глобальні пакети треба підтягнути до pinned: **`installer.ts` → `planStableUpgrades(packageNames, getInstalledVersion, MANIFEST.pinned)`**. Для кожного імені з маніфесту: якщо встановлена версія **не дорівнює** pinned (або пакета немає) — пакет потрапляє в план; інакше пропускається. CLI друкує план і викликає `upgradePackage(name, "stable")` лише для цих імен.
+
+#### `otto upgrade latest`
+
+Усі пакети з `MANIFEST.packages` оновлюються до **npm latest** (поведінка без змін); `planStableUpgrades` тут **не** використовується.
+
+### Флоу на практиці (що відбувається крок за кроком)
+
+1. **Ти запускаєш** `otto install` або `otto upgrade [stable|latest]`.
+2. **Глобальні CLI:** для `install` — дотягуються лише **відсутні** пакети до pinned; для `upgrade stable` — лише ті, хто **не на pinned** (через `planStableUpgrades`); для `upgrade latest` — оновлюються **всі** перелічені в маніфесті.
+3. **`opencode.json`:** Otto зчитує файл → додає plugins → виставляє/доповнює **`otto.subagentThreads`** (увімкнення тредів, питання перед видаленням, авто-видалення) → у **кожен** наявний `agent.<name>.prompt` дописується блок **«Otto subagent policy»** (видимий Discord thread для субагента, skills, після завершення — ask / auto-delete згідно прапорців). Якщо агентів немає — створюється `agent.build.prompt` з policy.
+4. **Виконання в runtime:** сам Otto **не** створює треди в Discord — це роблять **opencode + kimaki** (наприклад `kimaki send`, `kimaki session archive`), коли модель дотримується policy. Otto лише **фіксує правила** в конфігу.
+5. **Перезапуск kimaki:** якщо змінився конфіг або ставили/оновлювали пакети — Otto намагається `kimaki restart`, **крім** запуску всередині kimaki (`KIMAKI` у env) — тоді лише попередження.
 
 ## Конфігурація upstream (не змінюємо, лише оркеструємо)
 
@@ -82,7 +102,7 @@ otto оперує **тільки** на рівні `~/.config/opencode/opencode.
 
 | Файл | Хто створює | Що робить otto |
 |------|-------------|----------------|
-| `~/.config/opencode/opencode.json` | opencode / otto | merge `plugin[]` (додає plugins з маніфесту) |
+| `~/.config/opencode/opencode.json` | opencode / otto | merge `plugin[]`, `otto.*`, policy в `agent.*.prompt` |
 | `~/.config/opencode/agent-memory.json` | otto (якщо нема) | створює з дефолтними journal tags |
 | `~/.kimaki/opencode-config.json` | kimaki (автогенерований) | otto **НЕ чіпає** |
 
@@ -92,24 +112,24 @@ otto оперує **тільки** на рівні `~/.config/opencode/opencode.
 - Перевіряє наявність `packages` (npm CLI tools)
 - Якщо пакета **немає** → встановлює pinned версію з маніфесту
 - Якщо пакета **є** → залишає як є
-- Merge plugins у opencode.json (idempotent, не дублює)
+- Merge plugins + otto policy у opencode.json (idempotent для plugin[], policy оновлюється при зміні логіки)
 - Створює agent-memory.json з дефолтами (якщо нема)
 - kimaki restart — **тільки** якщо NOT всередині kimaki-сесії (`process.env.KIMAKI`)
 
 ### `otto upgrade [stable|latest]` — explicit upgrade
-- `stable` (default): до pinned версій з маніфесту
-- `latest`: до npm latest
-- Завжди merge plugins після upgrade
+- `stable` (default): до pinned версій з маніфесту; список пакетів для npm — з **`planStableUpgrades`**
+- `latest`: до npm latest для **всіх** пакетів з маніфесту
+- Завжди merge plugins + otto policy після upgrade
 - kimaki restart з тією ж умовою (не всередині kimaki)
 
 ### `otto status` — інформація
+- Версія Otto (`MANIFEST.version` / `package.json`)
 - Версії packages (встановлена vs required)
-- Config status (opencode.json, agent-memory.json, plugins)
-- kimaki running/not running
+- Config: opencode.json, agent-memory.json, plugins, **subagent threads** / ask / auto-delete, kimaki process
 
 ### `otto doctor` — повна діагностика
 - Packages: чи всі CLI tools встановлені
-- Config: чи plugin увімкнений
+- Config: memory plugin, **ін'єкція otto subagent policy**
 - Directories: чи існують memory, journal, kimaki data dirs
 - Результат: ✓/✗/⚠ з інструкціями для виправлення
 
@@ -132,8 +152,8 @@ opencode сам резолвить плагіни з npm при старті. `n
 1. **Зміни** → редагуєш `src/`
 2. **Білд**: `pnpm build`
 3. **Тести**: `pnpm test`
-4. **Локальний тест**: `node dist/cli.js status`
-5. **Глобальний інстал**: `npm install -g .`
+4. **Локальний тест**: `node dist/cli.js status` (має показати **Otto version: 0.0.2** після білду)
+5. **Глобальний інстал**: `npm install -g .` (з кореня репо після `pnpm build`)
 6. Після змін в otto — kimaki restart **НЕ потрібен** (otto — окремий CLI, не плагін)
 
 ## Тести
@@ -143,7 +163,7 @@ pnpm test           # всі тести (vitest run)
 pnpm test:watch     # watch mode
 ```
 
-6 тест-файлів, 17 тестів. Тести `detect.test.ts` та `health.test.ts` повільні (≈6с кожен) бо викликають `npm list -g`.
+6 тест-файлів, **25** тестів. Тести `detect.test.ts` та `health.test.ts` повільні (≈6с кожен) бо викликають `npm list -g`.
 
 ## Документація
 
@@ -151,6 +171,7 @@ pnpm test:watch     # watch mode
 |----------|------|
 | `docs/plans/2026-04-02-otto-distribution-design.md` | Design doc — архітектура, рішення, команди |
 | `docs/plans/2026-04-02-otto-implementation-plan.md` | Implementation plan — 8 задач з кодом |
+| `MEMORY.md` | Короткі нотатки для агентів (версія, planStableUpgrades, kimaki) |
 
 ## Memory
 
