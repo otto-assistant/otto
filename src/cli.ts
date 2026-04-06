@@ -17,6 +17,7 @@ import {
 import { installMissingPackages, upgradePackage, planStableUpgrades } from "./installer.js"
 import { hasKimakiBinary, restartKimaki } from "./lifecycle.js"
 import { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
+import { syncUpstreams } from "./sync.js"
 
 const args = process.argv.slice(2)
 const command = args[0] ?? ""
@@ -264,6 +265,9 @@ async function main(): Promise<void> {
     case "doctor":
       await cmdDoctor()
       break
+    case "sync":
+      await syncUpstreams()
+      break
     default:
       console.log(`Otto — terminal UI distribution for opencode + kimaki + opencode-agent-memory
 
@@ -274,6 +278,7 @@ Usage:
   otto upgrade latest     Upgrade to npm latest versions
   otto status             Show installed versions + config health
   otto doctor             Validate all integration points
+  otto sync               Trigger upstream sync for all forked repos
 `)
       break
   }

@@ -9,18 +9,26 @@ export interface Manifest {
 }
 
 export const MANIFEST: Manifest = {
-  version: "0.0.2",
+  version: "0.1.0",
   packages: {
     "opencode-ai": ">=1.0.115",
-    "kimaki": ">=0.4.0",
+    "@otto-assistant/bridge": ">=0.4.90",
   },
   pinned: {
     "opencode-ai": "1.2.20",
-    "kimaki": "0.4.90",
+    "@otto-assistant/bridge": "0.4.90",
   },
   plugins: [
     "opencode-agent-memory",
   ],
+}
+
+/** Upstream repositories for sync tracking */
+export const UPSTREAM_REPOS: Record<string, { repo: string; upstream: string }> = {
+  "@otto-assistant/bridge": {
+    repo: "otto-assistant/bridge",
+    upstream: "remorses/kimaki",
+  },
 }
 
 export const OPENCODE_CONFIG_DIR = (): string => {
