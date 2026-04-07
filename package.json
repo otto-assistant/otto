@@ -1,5 +1,5 @@
 {
-  "name": "otto",
+  "name": "@otto-assistant/otto",
   "version": "0.1.0",
   "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + opencode-agent-memory",
   "type": "module",
