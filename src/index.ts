@@ -27,14 +27,23 @@ export { hasKimakiBinary, isKimakiRunning, restartKimaki } from "./lifecycle.js"
 export { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
 export type { HealthResult, PackageCheck, ConfigHealth } from "./health.js"
 export {
-  SKILL_REPO_URL,
-  SKILLS_CACHE_DIR,
   OPENCODE_SKILLS_DIR,
+  SKILLS_INDEX_PATH,
+  DEFAULT_SKILL_REPOS,
   parseSkillMd,
-  ensureSkillsRepo,
-  discoverCachedSkills,
+  loadSkillsIndex,
+  saveSkillsIndex,
+  isIndexStale,
+  ensureSkillsIndex,
+  searchSkills,
+  getAllIndexedSkills,
+  fetchRepoSkillsIndex,
+  ghApi,
+  fetchRepoDir,
+  fetchRepoFile,
   listInstalledSkills,
-  installSkill,
+  installSkillFromIndex,
   removeSkill,
+  getConfiguredRepos,
 } from "./skills.js"
-export type { SkillMeta, RepoSyncResult } from "./skills.js"
+export type { SkillMeta, SkillIndexEntry, SkillsIndex, RepoSyncResult } from "./skills.js"

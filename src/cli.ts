@@ -19,12 +19,16 @@ import { hasKimakiBinary, restartKimaki } from "./lifecycle.js"
 import { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
 import { syncUpstreams } from "./sync.js"
 import {
-  ensureSkillsRepo,
-  discoverCachedSkills,
+  searchSkills,
+  getAllIndexedSkills,
   listInstalledSkills,
-  installSkill,
+  installSkillFromIndex,
   removeSkill,
-  SKILLS_CACHE_DIR,
+  ensureSkillsIndex,
+  getConfiguredRepos,
+  loadSkillsIndex,
+  DEFAULT_SKILL_REPOS,
+  type SkillIndexEntry,
   type SkillMeta,
 } from "./skills.js"
 
@@ -92,19 +96,19 @@ async function cmdInstall(): Promise<void> {
   }
 
   // 5. Install Otto-core skills from skills repo (best-effort)
-  const skillsSyncResult = ensureSkillsRepo()
-  if (skillsSyncResult !== "offline") {
-    const cachedSkills = discoverCachedSkills(SKILLS_CACHE_DIR())
+  try {
+    ensureSkillsIndex()
+    const allSkills = getAllIndexedSkills()
     const installedSkillNames = new Set(listInstalledSkills().map((s) => s.name))
-    const coreSkills = cachedSkills.filter(
-      (s) => s.metadata?.category === "otto-core" && !installedSkillNames.has(s.name),
+    const coreSkills = allSkills.filter(
+      (s) => s.source === "otto-assistant/skills" && !installedSkillNames.has(s.name),
     )
-    if (coreSkills.length > 0) {
-      for (const skill of coreSkills) {
-        const ok = installSkill(skill.name)
-        if (ok) console.log(`Installed skill: ${skill.name}`)
-      }
+    for (const skill of coreSkills) {
+      const ok = installSkillFromIndex(skill.name)
+      if (ok) console.log(`Installed skill: ${skill.name}`)
     }
+  } catch {
+    console.log("⚠ Could not fetch skills from GitHub (offline?). Skipping.")
   }
 
   // 6. Restart kimaki if needed — but NOT if running inside kimaki
@@ -227,8 +231,14 @@ async function cmdStatus(): Promise<void> {
   console.log("\nSkills:")
   const skillsInstalled = listInstalledSkills()
   console.log(`  installed: ${skillsInstalled.length > 0 ? skillsInstalled.map((s) => s.name).join(", ") : "(none)"}`)
-  const skillsCached = discoverCachedSkills(SKILLS_CACHE_DIR())
-  console.log(`  available in repo: ${skillsCached.length}`)
+  try {
+    const index = loadSkillsIndex()
+    const repoCount = Object.keys(index.repos).length
+    const totalIndexed = getAllIndexedSkills().length
+    console.log(`  indexed: ${totalIndexed} skills from ${repoCount} repos`)
+  } catch {
+    console.log("  indexed: (unavailable)")
+  }
 }
 
 async function cmdDoctor(): Promise<void> {
@@ -281,16 +291,20 @@ async function cmdDoctor(): Promise<void> {
 
   console.log("\nChecking skills...")
   const skillsInstalled = listInstalledSkills()
-  const skillsCached = discoverCachedSkills(SKILLS_CACHE_DIR())
   if (skillsInstalled.length > 0) {
     console.log(`  ✓ ${skillsInstalled.length} skill(s) installed`)
   } else {
     console.log("  ⚠ No skills installed — run `otto skills add --all`")
   }
-  if (skillsCached.length > 0) {
-    console.log(`  ✓ Skills cache available (${skillsCached.length} skills)`)
-  } else {
-    console.log("  ⚠ Skills cache empty — run `otto skills update`")
+  try {
+    const totalIndexed = getAllIndexedSkills().length
+    if (totalIndexed > 0) {
+      console.log(`  ✓ Skills index available (${totalIndexed} skills)`)
+    } else {
+      console.log("  ⚠ Skills index empty — run `otto skills update`")
+    }
+  } catch {
+    console.log("  ⚠ Skills index unavailable")
   }
 
   console.log(hasErrors ? "\n✗ Issues found. Run `otto install` to fix." : "\n✓ All checks passed!")
@@ -305,15 +319,29 @@ async function cmdSkills(subArgs: string[]): Promise<void> {
 
   switch (skillCommand) {
     case "list":
-      await cmdSkillsList()
+      cmdSkillsList()
       break
-    case "add":
-      if (!subArgs[1] || subArgs[1] === "--all") {
+    case "search": {
+      const query = subArgs.slice(1).join(" ")
+      if (!query) {
+        console.log("Usage: otto skills search <query>")
+        process.exit(1)
+      }
+      cmdSkillsSearch(query)
+      break
+    }
+    case "browse":
+      cmdSkillsBrowse()
+      break
+    case "add": {
+      const arg = subArgs[1]
+      if (!arg || arg === "--all") {
         await cmdSkillsAddAll()
       } else {
-        await cmdSkillsAddOne(subArgs[1])
+        await cmdSkillsAddOne(arg)
       }
       break
+    }
     case "remove": {
       const name = subArgs[1]
       if (!name) {
@@ -324,23 +352,82 @@ async function cmdSkills(subArgs: string[]): Promise<void> {
       break
     }
     case "update":
-      await cmdSkillsUpdate()
+      cmdSkillsUpdate()
+      break
+    case "repos":
+      cmdSkillsRepos()
       break
     default:
-      console.log(`Otto skills — manage agent skills from otto-assistant/skills
+      console.log(`Otto skills — discover and install agent skills from public repos
 
 Usage:
-  otto skills list              List installed and available skills
-  otto skills add <name>        Install a specific skill
-  otto skills add --all         Install all available skills
-  otto skills update            Update installed skills from GitHub
-  otto skills remove <name>     Remove an installed skill
+  otto skills search <query>     Search skills by name/description
+  otto skills browse             Browse all available skills
+  otto skills list               List installed skills
+  otto skills add <name>         Install a skill
+  otto skills add --all          Install all skills from otto-assistant/skills
+  otto skills update             Refresh skills index from GitHub
+  otto skills remove <name>      Remove an installed skill
+  otto skills repos              Show configured skill repositories
 `)
       break
   }
 }
 
-async function cmdSkillsList(): Promise<void> {
+function cmdSkillsSearch(query: string): void {
+  console.log(`Searching: "${query}"\n`)
+
+  const { refreshed } = ensureSkillsIndex()
+  if (refreshed > 0) {
+    console.log(`Updated index (${refreshed} repo(s) refreshed).\n`)
+  }
+
+  const results = searchSkills(query)
+  if (results.length === 0) {
+    console.log("No skills found.")
+    return
+  }
+
+  for (const skill of results) {
+    console.log(`  ${skill.name} — ${skill.description}`)
+    console.log(`    source: ${skill.source}`)
+  }
+
+  console.log(`\n${results.length} skill(s) found. Install with: otto skills add <name>`)
+}
+
+function cmdSkillsBrowse(): void {
+  console.log("Otto skills — browsing all available\n")
+
+  const { refreshed } = ensureSkillsIndex()
+  if (refreshed > 0) {
+    console.log(`Updated index (${refreshed} repo(s) refreshed).\n`)
+  }
+
+  const allSkills = getAllIndexedSkills()
+  const installed = new Set(listInstalledSkills().map((s) => s.name))
+
+  // Group by source repo
+  const byRepo: Record<string, SkillIndexEntry[]> = {}
+  for (const skill of allSkills) {
+    if (!byRepo[skill.source]) byRepo[skill.source] = []
+    byRepo[skill.source].push(skill)
+  }
+
+  for (const [repo, skills] of Object.entries(byRepo)) {
+    console.log(`${repo} (${skills.length} skills):`)
+    for (const skill of skills) {
+      const icon = installed.has(skill.name) ? "✓" : "•"
+      console.log(`  ${icon} ${skill.name} — ${skill.description}`)
+    }
+    console.log()
+  }
+
+  const totalAvailable = allSkills.filter((s) => !installed.has(s.name)).length
+  console.log(`${allSkills.length} total, ${totalAvailable} available to install.`)
+}
+
+function cmdSkillsList(): void {
   console.log("Otto skills\n")
 
   const installed = listInstalledSkills()
@@ -353,74 +440,46 @@ async function cmdSkillsList(): Promise<void> {
     console.log("Installed: (none)")
   }
 
-  const syncResult = ensureSkillsRepo()
-  if (syncResult === "offline") {
-    console.log("\n⚠ Could not reach otto-assistant/skills (offline). Showing cached only.")
-  }
-
-  const cached = discoverCachedSkills(SKILLS_CACHE_DIR())
-  const installedNames = new Set(installed.map((s) => s.name))
-  const available = cached.filter((s) => !installedNames.has(s.name))
-
-  if (available.length > 0) {
-    console.log("\nAvailable:")
-    for (const s of available) {
-      console.log(`  • ${s.name} — ${s.description}`)
-    }
-    console.log("\nRun `otto skills add <name>` to install.")
-  } else if (cached.length > 0) {
-    console.log("\nAll available skills are installed.")
-  }
+  console.log(`\nUse "otto skills browse" to see all available skills.`)
+  console.log(`Use "otto skills search <query>" to search.`)
 }
 
 async function cmdSkillsAddOne(name: string): Promise<void> {
   console.log(`Installing skill: ${name}\n`)
 
-  const syncResult = ensureSkillsRepo()
-  const cached = discoverCachedSkills(SKILLS_CACHE_DIR())
+  ensureSkillsIndex()
 
-  if (syncResult === "offline" && !cached.find((s) => s.name === name)) {
-    console.error(`Error: skill "${name}" not found in cache and cannot reach GitHub.`)
-    process.exit(1)
-  }
-
-  const success = installSkill(name)
+  const success = installSkillFromIndex(name)
   if (!success) {
-    console.error(`Error: skill "${name}" not found in otto-assistant/skills.`)
+    console.error(`Error: skill "${name}" not found. Run "otto skills search <query>" to find skills.`)
     process.exit(1)
   }
 
   console.log(`Installed ${name} → ~/.config/opencode/skills/${name}/`)
-
-  const meta = cached.find((s) => s.name === name)
-  if (meta?.metadata?.["requires-kimaki"] === "true") {
-    if (process.env.KIMAKI) {
-      console.log("⚠ This skill requires kimaki restart. Run `kimaki restart` when ready.")
-    }
-  }
-
   console.log("Done!")
 }
 
 async function cmdSkillsAddAll(): Promise<void> {
   console.log("Installing all skills from otto-assistant/skills...\n")
 
-  const syncResult = ensureSkillsRepo()
-  if (syncResult === "offline") {
-    console.log("⚠ Working offline — using cached repo.")
+  ensureSkillsIndex()
+  const allSkills = getAllIndexedSkills()
+  const ottoSkills = allSkills.filter((s) => s.source === "otto-assistant/skills")
+
+  if (ottoSkills.length === 0) {
+    console.log("No skills found in otto-assistant/skills. Check your connection.")
+    return
   }
 
-  const cached = discoverCachedSkills(SKILLS_CACHE_DIR())
-  const installed = listInstalledSkills()
-  const installedNames = new Set(installed.map((s) => s.name))
-
+  const installed = new Set(listInstalledSkills().map((s) => s.name))
   let added = 0
-  for (const skill of cached) {
-    if (installedNames.has(skill.name)) {
+
+  for (const skill of ottoSkills) {
+    if (installed.has(skill.name)) {
       console.log(`  ✓ ${skill.name} (already installed)`)
       continue
     }
-    const success = installSkill(skill.name)
+    const success = installSkillFromIndex(skill.name)
     if (success) {
       console.log(`  + ${skill.name}`)
       added++
@@ -437,36 +496,20 @@ async function cmdSkillsAddAll(): Promise<void> {
   console.log("Done!")
 }
 
-async function cmdSkillsUpdate(): Promise<void> {
-  console.log("Updating skills from otto-assistant/skills...\n")
+function cmdSkillsUpdate(): void {
+  console.log("Refreshing skills index from GitHub...\n")
 
-  const syncResult = ensureSkillsRepo()
-  if (syncResult === "offline") {
-    console.log("⚠ Could not reach GitHub. Using existing cache.")
-  } else if (syncResult === "cloned") {
-    console.log("Cloned skills repo.")
-  } else {
-    console.log("Updated skills cache.")
-  }
+  const { refreshed, total } = ensureSkillsIndex(0) // force refresh all
 
-  const installed = listInstalledSkills()
-  if (installed.length === 0) {
-    console.log("No skills installed. Run `otto skills add --all` to get started.")
+  if (refreshed === 0 && total === 0) {
+    console.log("No repos configured.")
     return
   }
 
-  let updated = 0
-  for (const skill of installed) {
-    const success = installSkill(skill.name)
-    if (success) {
-      console.log(`  ✓ ${skill.name} (updated)`)
-      updated++
-    } else {
-      console.log(`  ⚠ ${skill.name} (not found in repo, keeping installed)`)
-    }
-  }
+  console.log(`Refreshed ${refreshed}/${total} repo(s).`)
 
-  console.log(`\n${updated} skill(s) updated.`)
+  const allSkills = getAllIndexedSkills()
+  console.log(`Index now has ${allSkills.length} skills.`)
   console.log("Done!")
 }
 
@@ -481,6 +524,17 @@ function cmdSkillsRemove(name: string): void {
 
   console.log(`Removed ${name}.`)
   console.log("Done!")
+}
+
+function cmdSkillsRepos(): void {
+  console.log("Configured skill repositories:\n")
+
+  const repos = getConfiguredRepos()
+  for (const repo of repos) {
+    console.log(`  ${repo}`)
+  }
+
+  console.log(`\n${repos.length} repo(s) configured.`)
 }
 
 // ---------------------------------------------------------------------------
@@ -511,18 +565,21 @@ async function main(): Promise<void> {
       console.log(`Otto — terminal UI distribution for opencode + kimaki + opencode-agent-memory
 
 Usage:
-  otto install            Install missing packages + configure
-  otto upgrade            Upgrade to stable (manifest-pinned) versions
-  otto upgrade stable     Upgrade to manifest-pinned versions
-  otto upgrade latest     Upgrade to npm latest versions
-  otto status             Show installed versions + config health
-  otto doctor             Validate all integration points
-  otto sync               Trigger upstream sync for all forked repos
-  otto skills list        List installed and available skills
-  otto skills add <name>  Install a skill from otto-assistant/skills
-  otto skills add --all   Install all available skills
-  otto skills update      Update skills from GitHub
-  otto skills remove <n>  Remove an installed skill
+  otto install              Install missing packages + configure
+  otto upgrade              Upgrade to stable (manifest-pinned) versions
+  otto upgrade stable       Upgrade to manifest-pinned versions
+  otto upgrade latest       Upgrade to npm latest versions
+  otto status               Show installed versions + config health
+  otto doctor               Validate all integration points
+  otto sync                 Trigger upstream sync for all forked repos
+  otto skills search <q>    Search skills across public repos
+  otto skills browse        Browse all available skills
+  otto skills list          List installed skills
+  otto skills add <name>    Install a skill
+  otto skills add --all     Install all skills from otto-assistant/skills
+  otto skills update        Refresh skills index
+  otto skills remove <name> Remove an installed skill
+  otto skills repos         Show configured skill repositories
 `)
       break
   }

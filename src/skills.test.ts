@@ -4,17 +4,22 @@ import path from "node:path"
 import os from "node:os"
 import { execFileSync } from "node:child_process"
 import {
-  SKILL_REPO_URL,
-  SKILLS_CACHE_DIR,
+  SKILLS_INDEX_PATH,
   OPENCODE_SKILLS_DIR,
+  DEFAULT_SKILL_REPOS,
   parseSkillMd,
-  discoverCachedSkills,
   listInstalledSkills,
-  installSkill,
   removeSkill,
-  ensureSkillsRepo,
-  type SkillMeta,
-  type RepoSyncResult,
+  loadSkillsIndex,
+  saveSkillsIndex,
+  isIndexStale,
+  searchSkills,
+  getAllIndexedSkills,
+  getConfiguredRepos,
+  installSkillFromIndex,
+  fetchRepoSkillsIndex,
+  type SkillIndexEntry,
+  type SkillsIndex,
 } from "./skills.js"
 
 // ---------------------------------------------------------------------------
@@ -73,24 +78,30 @@ name: has-name
 `
 
 // ---------------------------------------------------------------------------
-// Task 1: Types, Constants, Parser
+// Constants
 // ---------------------------------------------------------------------------
 
 describe("skills constants", () => {
-  it("SKILL_REPO_URL points to otto-assistant/skills", () => {
-    expect(SKILL_REPO_URL).toBe("https://github.com/otto-assistant/skills.git")
+  it("DEFAULT_SKILL_REPOS includes key repos", () => {
+    expect(DEFAULT_SKILL_REPOS).toContain("otto-assistant/skills")
+    expect(DEFAULT_SKILL_REPOS).toContain("anthropics/skills")
+    expect(DEFAULT_SKILL_REPOS).toContain("vercel-labs/agent-skills")
+    expect(DEFAULT_SKILL_REPOS.length).toBeGreaterThanOrEqual(3)
   })
 
-  it("SKILLS_CACHE_DIR returns ~/.cache/otto/skills-repo", () => {
+  it("SKILLS_INDEX_PATH returns ~/.cache/otto/skills-index.json", () => {
     const home = process.env.HOME || process.env.USERPROFILE || "/root"
-    expect(SKILLS_CACHE_DIR()).toBe(`${home}/.cache/otto/skills-repo`)
+    expect(SKILLS_INDEX_PATH()).toContain(".cache/otto/skills-index.json")
   })
 
   it("OPENCODE_SKILLS_DIR returns ~/.config/opencode/skills", () => {
-    const home = process.env.HOME || process.env.USERPROFILE || "/root"
-    expect(OPENCODE_SKILLS_DIR()).toBe(`${home}/.config/opencode/skills`)
+    expect(OPENCODE_SKILLS_DIR()).toContain(".config/opencode/skills")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Parser
+// ---------------------------------------------------------------------------
 
 describe("parseSkillMd", () => {
   it("parses valid SKILL.md with required fields only", () => {
@@ -127,46 +138,8 @@ describe("parseSkillMd", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Task 2: Skill Discovery
+// Local skill discovery
 // ---------------------------------------------------------------------------
-
-describe("discoverCachedSkills", () => {
-  let tmpCache: string
-
-  beforeEach(() => {
-    tmpCache = makeTmp()
-  })
-
-  afterEach(() => {
-    fs.rmSync(tmpCache, { recursive: true, force: true })
-  })
-
-  it("discovers skills from a fake cache dir", () => {
-    writeSkillMd(path.join(tmpCache, "skills", "skill-a"), VALID_SKILL_MD)
-    writeSkillMd(
-      path.join(tmpCache, "skills", "skill-b"),
-      VALID_SKILL_MD_WITH_META,
-    )
-
-    const skills = discoverCachedSkills(tmpCache)
-    expect(skills).toHaveLength(2)
-    expect(skills.map((s) => s.name).sort()).toEqual(["my-skill", "my-skill"])
-  })
-
-  it("skips invalid SKILL.md files", () => {
-    writeSkillMd(path.join(tmpCache, "skills", "good-skill"), VALID_SKILL_MD)
-    writeSkillMd(path.join(tmpCache, "skills", "bad-skill"), NO_FRONTMATTER_MD)
-
-    const skills = discoverCachedSkills(tmpCache)
-    expect(skills).toHaveLength(1)
-    expect(skills[0].name).toBe("my-skill")
-  })
-
-  it("returns empty array for non-existent dir", () => {
-    const skills = discoverCachedSkills(path.join(tmpCache, "nonexistent"))
-    expect(skills).toEqual([])
-  })
-})
 
 describe("listInstalledSkills", () => {
   let tmpBase: string
@@ -185,63 +158,16 @@ describe("listInstalledSkills", () => {
     expect(skills).toHaveLength(1)
     expect(skills[0].name).toBe("my-skill")
   })
+
+  it("returns empty array for non-existent dir", () => {
+    const skills = listInstalledSkills(path.join(tmpBase, "nonexistent"))
+    expect(skills).toEqual([])
+  })
 })
 
 // ---------------------------------------------------------------------------
-// Task 3: Install / Remove
+// Remove skill
 // ---------------------------------------------------------------------------
-
-describe("installSkill", () => {
-  let tmpCache: string
-  let tmpTarget: string
-
-  beforeEach(() => {
-    tmpCache = makeTmp()
-    tmpTarget = makeTmp()
-  })
-
-  afterEach(() => {
-    fs.rmSync(tmpCache, { recursive: true, force: true })
-    fs.rmSync(tmpTarget, { recursive: true, force: true })
-  })
-
-  it("copies from cache to target", () => {
-    writeSkillMd(path.join(tmpCache, "skills", "test-skill"), VALID_SKILL_MD)
-    // Also add an extra file to verify recursive copy
-    const extraDir = path.join(tmpCache, "skills", "test-skill", "templates")
-    fs.mkdirSync(extraDir, { recursive: true })
-    fs.writeFileSync(path.join(extraDir, "prompt.txt"), "hello", "utf-8")
-
-    const result = installSkill("test-skill", tmpCache, tmpTarget)
-    expect(result).toBe(true)
-
-    const installedMd = fs.readFileSync(
-      path.join(tmpTarget, "test-skill", "SKILL.md"),
-      "utf-8",
-    )
-    expect(installedMd).toContain("name: my-skill")
-
-    const extraFile = fs.readFileSync(
-      path.join(tmpTarget, "test-skill", "templates", "prompt.txt"),
-      "utf-8",
-    )
-    expect(extraFile).toBe("hello")
-  })
-
-  it("returns false if skill not in cache", () => {
-    const result = installSkill("nonexistent-skill", tmpCache, tmpTarget)
-    expect(result).toBe(false)
-  })
-
-  it("returns false if SKILL.md is invalid", () => {
-    writeSkillMd(
-      path.join(tmpCache, "skills", "bad-skill"),
-      NO_FRONTMATTER_MD,
-    )
-    const result = installSkill("bad-skill", tmpCache, tmpTarget)
-    expect(result).toBe(false)
-  })
-})
 
 describe("removeSkill", () => {
   let tmpTarget: string
@@ -270,81 +196,247 @@ describe("removeSkill", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Task 4: Git Cache Management
+// Skills Index — load, save, stale check
 // ---------------------------------------------------------------------------
 
-describe("ensureSkillsRepo", () => {
-  let tmpCache: string
-  let tmpRemote: string
+describe("Skills Index", () => {
+  let tmpDir: string
 
   beforeEach(() => {
-    tmpCache = makeTmp()
-    tmpRemote = makeTmp()
+    tmpDir = makeTmp()
   })
 
   afterEach(() => {
-    fs.rmSync(tmpCache, { recursive: true, force: true })
-    fs.rmSync(tmpRemote, { recursive: true, force: true })
+    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it("clones repo when cache is empty", () => {
-    // Create a bare git repo as fake remote
-    const remotePath = path.join(tmpRemote, "skills.git")
-    execFileSync("git", ["init", "--bare", remotePath], { encoding: "utf-8" })
+  it("loadSkillsIndex returns empty index when file missing", () => {
+    const indexPath = path.join(tmpDir, "skills-index.json")
+    const idx = loadSkillsIndex(indexPath)
+    expect(idx.version).toBe(1)
+    expect(idx.repos).toEqual({})
+  })
 
-    // Need at least one commit for clone to work
-    const tmpWork = makeTmp()
-    try {
-      execFileSync("git", ["clone", remotePath, tmpWork], { encoding: "utf-8" })
-      fs.writeFileSync(path.join(tmpWork, "README.md"), "# Skills repo\n", "utf-8")
-      execFileSync("git", ["add", "."], { cwd: tmpWork, encoding: "utf-8" })
-      execFileSync("git", ["commit", "-m", "init"], {
-        cwd: tmpWork,
-        encoding: "utf-8",
-        env: { ...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@test.com", GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@test.com" },
-      })
-      execFileSync("git", ["push", "origin", "master"], { cwd: tmpWork, encoding: "utf-8" })
-    } finally {
-      fs.rmSync(tmpWork, { recursive: true, force: true })
+  it("saveSkillsIndex + loadSkillsIndex roundtrip", () => {
+    const indexPath = path.join(tmpDir, "skills-index.json")
+    const idx: SkillsIndex = {
+      version: 1,
+      updated: new Date().toISOString(),
+      repos: {
+        "anthropics/skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            { name: "pdf", description: "Create PDF files", source: "anthropics/skills", path: "skills/pdf" },
+          ],
+        },
+      },
     }
-
-    const result = ensureSkillsRepo(tmpCache, remotePath)
-    expect(result).toBe("cloned")
-    expect(fs.existsSync(path.join(tmpCache, ".git"))).toBe(true)
-    expect(fs.existsSync(path.join(tmpCache, "README.md"))).toBe(true)
+    saveSkillsIndex(idx, indexPath)
+    const loaded = loadSkillsIndex(indexPath)
+    expect(loaded.repos["anthropics/skills"].skills).toHaveLength(1)
+    expect(loaded.repos["anthropics/skills"].skills[0].name).toBe("pdf")
   })
 
-  it("pulls when cache exists", () => {
-    // Create a bare repo and clone into cache
-    const remotePath = path.join(tmpRemote, "skills.git")
-    execFileSync("git", ["init", "--bare", remotePath], { encoding: "utf-8" })
+  it("isIndexStale returns true for old timestamps", () => {
+    const oldDate = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+    expect(isIndexStale(oldDate, 24)).toBe(true)
+    expect(isIndexStale(new Date().toISOString(), 24)).toBe(false)
+    expect(isIndexStale("", 24)).toBe(true)
+  })
+})
 
-    // Initial commit on remote
-    const tmpWork = makeTmp()
-    try {
-      execFileSync("git", ["clone", remotePath, tmpWork], { encoding: "utf-8" })
-      fs.writeFileSync(path.join(tmpWork, "README.md"), "# Skills\n", "utf-8")
-      execFileSync("git", ["add", "."], { cwd: tmpWork, encoding: "utf-8" })
-      execFileSync("git", ["commit", "-m", "init"], {
-        cwd: tmpWork,
-        encoding: "utf-8",
-        env: { ...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@test.com", GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@test.com" },
-      })
-      execFileSync("git", ["push", "origin", "master"], { cwd: tmpWork, encoding: "utf-8" })
-    } finally {
-      fs.rmSync(tmpWork, { recursive: true, force: true })
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+describe("searchSkills", () => {
+  let tmpIndex: string
+
+  beforeEach(() => {
+    tmpIndex = path.join(makeTmp(), "skills-index.json")
+  })
+
+  afterEach(() => {
+    fs.rmSync(path.dirname(tmpIndex), { recursive: true, force: true })
+  })
+
+  function makeTestIndex(): SkillsIndex {
+    return {
+      version: 1,
+      updated: new Date().toISOString(),
+      repos: {
+        "anthropics/skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            { name: "frontend-design", description: "Design web frontends", source: "anthropics/skills", path: "skills/frontend-design" },
+            { name: "pdf", description: "Create PDF documents", source: "anthropics/skills", path: "skills/pdf" },
+          ],
+        },
+        "vercel-labs/agent-skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            { name: "react-best-practices", description: "React and Next.js performance patterns", source: "vercel-labs/agent-skills", path: "skills/react-best-practices" },
+          ],
+        },
+      },
     }
+  }
 
-    // Clone into cache first
-    execFileSync("git", ["clone", "--depth", "1", remotePath, tmpCache], { encoding: "utf-8" })
-
-    // Now pull should succeed
-    const result = ensureSkillsRepo(tmpCache, remotePath)
-    expect(result).toBe("pulled")
+  it("finds skills by name substring", () => {
+    saveSkillsIndex(makeTestIndex(), tmpIndex)
+    const results = searchSkills("react", tmpIndex)
+    expect(results).toHaveLength(1)
+    expect(results[0].name).toBe("react-best-practices")
   })
 
-  it("returns offline on failure", () => {
-    const result = ensureSkillsRepo(tmpCache, "https://invalid.example.com/nope.git")
-    expect(result).toBe("offline")
+  it("finds skills by description substring", () => {
+    saveSkillsIndex(makeTestIndex(), tmpIndex)
+    const results = searchSkills("PDF", tmpIndex)
+    expect(results).toHaveLength(1)
+    expect(results[0].name).toBe("pdf")
   })
+
+  it("returns empty array for no matches", () => {
+    saveSkillsIndex(makeTestIndex(), tmpIndex)
+    const results = searchSkills("nonexistent-xyz", tmpIndex)
+    expect(results).toHaveLength(0)
+  })
+
+  it("finds skills across multiple repos", () => {
+    saveSkillsIndex(makeTestIndex(), tmpIndex)
+    const results = searchSkills("design", tmpIndex)
+    expect(results.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getAllIndexedSkills
+// ---------------------------------------------------------------------------
+
+describe("getAllIndexedSkills", () => {
+  let tmpIndex: string
+
+  beforeEach(() => {
+    tmpIndex = path.join(makeTmp(), "skills-index.json")
+  })
+
+  afterEach(() => {
+    fs.rmSync(path.dirname(tmpIndex), { recursive: true, force: true })
+  })
+
+  it("returns all skills from all repos", () => {
+    const idx: SkillsIndex = {
+      version: 1,
+      updated: new Date().toISOString(),
+      repos: {
+        "anthropics/skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            { name: "pdf", description: "Create PDFs", source: "anthropics/skills", path: "skills/pdf" },
+          ],
+        },
+        "vercel-labs/agent-skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            { name: "react-best", description: "React patterns", source: "vercel-labs/agent-skills", path: "skills/react-best" },
+          ],
+        },
+      },
+    }
+    saveSkillsIndex(idx, tmpIndex)
+    const all = getAllIndexedSkills(tmpIndex)
+    expect(all).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// installSkillFromIndex (unit tests — no network)
+// ---------------------------------------------------------------------------
+
+describe("installSkillFromIndex", () => {
+  let tmpTarget: string
+  let tmpIndex: string
+
+  beforeEach(() => {
+    tmpTarget = makeTmp()
+    tmpIndex = path.join(makeTmp(), "skills-index.json")
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpTarget, { recursive: true, force: true })
+    fs.rmSync(path.dirname(tmpIndex), { recursive: true, force: true })
+  })
+
+  it("returns false if skill not found in index", () => {
+    const idx: SkillsIndex = { version: 1, updated: "", repos: {} }
+    saveSkillsIndex(idx, tmpIndex)
+
+    const result = installSkillFromIndex("nonexistent", tmpTarget, tmpIndex)
+    expect(result).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Integration tests (require gh auth)
+// ---------------------------------------------------------------------------
+
+function hasGhAuth(): boolean {
+  try {
+    execFileSync("gh", ["auth", "status"], { encoding: "utf-8", stdio: "pipe" })
+    return true
+  } catch {
+    return false
+  }
+}
+
+describe("GitHub API integration", () => {
+  it("fetchRepoSkillsIndex indexes skills from otto-assistant/skills", () => {
+    if (!hasGhAuth()) return
+    const entries = fetchRepoSkillsIndex("otto-assistant/skills")
+    expect(entries.length).toBeGreaterThanOrEqual(3)
+    for (const entry of entries) {
+      expect(entry.name).toBeTruthy()
+      expect(entry.description).toBeTruthy()
+      expect(entry.source).toBe("otto-assistant/skills")
+    }
+  }, 15_000)
+
+  it("fetchRepoSkillsIndex indexes skills from anthropics/skills", () => {
+    if (!hasGhAuth()) return
+    const entries = fetchRepoSkillsIndex("anthropics/skills")
+    expect(entries.length).toBeGreaterThanOrEqual(5)
+    for (const entry of entries) {
+      expect(entry.name).toBeTruthy()
+      expect(entry.description).toBeTruthy()
+    }
+  }, 30_000)
+
+  it("installSkillFromIndex installs a real skill", () => {
+    if (!hasGhAuth()) return
+    const tmpTarget = makeTmp()
+    const tmpIdx = path.join(makeTmp(), "skills-index.json")
+    try {
+      const idx: SkillsIndex = {
+        version: 1,
+        updated: new Date().toISOString(),
+        repos: {
+          "otto-assistant/skills": {
+            fetched: new Date().toISOString(),
+            skills: [
+              { name: "otto-subagent-threads", description: "Enforce Discord threads", source: "otto-assistant/skills", path: "skills/otto-subagent-threads" },
+            ],
+          },
+        },
+      }
+      saveSkillsIndex(idx, tmpIdx)
+
+      const result = installSkillFromIndex("otto-subagent-threads", tmpTarget, tmpIdx)
+      expect(result).toBe(true)
+      const skillMd = fs.readFileSync(path.join(tmpTarget, "otto-subagent-threads", "SKILL.md"), "utf-8")
+      expect(skillMd).toContain("name: otto-subagent-threads")
+    } finally {
+      fs.rmSync(tmpTarget, { recursive: true, force: true })
+      fs.rmSync(path.dirname(tmpIdx), { recursive: true, force: true })
+    }
+  }, 15_000)
 })
