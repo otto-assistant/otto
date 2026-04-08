@@ -31,3 +31,13 @@
 - `pnpm test` — `detect.test.ts` / `health.test.ts` are slow (~npm list -g).
 - `pnpm build` — `tsc` then **`chmod +x dist/cli.js`** so global `npm install -g .` symlink to `dist/cli.js` is executable (avoids “Permission denied” on `otto`).
 - **Global install** (`npm install -g .` from repo root after build) is often **user-side**; coding agents typically do not run it unless the user asks. Local check without global install: `node dist/cli.js status`.
+
+## Agent Skills Ecosystem (research 2026-04-07)
+
+- **Specification**: agentskills.io — SKILL.md = YAML frontmatter (name, description) + Markdown body. Progressive disclosure: metadata → instructions → resources on demand.
+- **CLI**: `npx skills add owner/repo` (vercel-labs/skills, 13.2k stars) — discovers SKILL.md in repos, symlinks into agent dirs. Supports 41+ agents.
+- **OpenCode paths**: project `.agents/skills/`, global `~/.config/opencode/skills/`. OpenCode already discovers skills at startup.
+- **Key repos**: vercel-labs/agent-skills (24.6k stars), anthropics/skills, remorses/gitchamber (ships with SKILL.md).
+- **OpenChamber**: UI for OpenCode, has `skills-catalog` module for browse/install/manage skills from desktop.
+- **Otto already uses skills**: superpowers, kimaki skills, etc. live in `~/.config/opencode/skills/` or `/usr/lib/node_modules/kimaki/skills/`.
+- **Decision**: Otto needs both a **GitHub repo** (`otto-assistant/skills`) with curated skills AND **otto skills** CLI commands for management.

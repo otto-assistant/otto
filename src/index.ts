@@ -26,3 +26,15 @@ export type { UpgradeMode } from "./installer.js"
 export { hasKimakiBinary, isKimakiRunning, restartKimaki } from "./lifecycle.js"
 export { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
 export type { HealthResult, PackageCheck, ConfigHealth } from "./health.js"
+export {
+  SKILL_REPO_URL,
+  SKILLS_CACHE_DIR,
+  OPENCODE_SKILLS_DIR,
+  parseSkillMd,
+  ensureSkillsRepo,
+  discoverCachedSkills,
+  listInstalledSkills,
+  installSkill,
+  removeSkill,
+} from "./skills.js"
+export type { SkillMeta, RepoSyncResult } from "./skills.js"
