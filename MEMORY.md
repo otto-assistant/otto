@@ -32,6 +32,20 @@
 - `pnpm build` — `tsc` then **`chmod +x dist/cli.js`** so global `npm install -g .` symlink to `dist/cli.js` is executable (avoids “Permission denied” on `otto`).
 - **Global install** (`npm install -g .` from repo root after build) is often **user-side**; coding agents typically do not run it unless the user asks. Local check without global install: `node dist/cli.js status`.
 
+## Ecosystem
+
+- **Two repos** under `otto-assistant` GitHub org: `otto` (wrapper CLI) and `bridge` (kimaki fork)
+- **Bridge location**: `/data/projects/bridge` (kimaki project registered, Discord channel `#bridge`)
+- **Bridge fork docs**: `/data/projects/bridge/OTTO_AGENTS.md` — what we changed vs upstream
+- **Cross-repo workflow**: `docs/DEV-WORKFLOW.md` — full dev/test/deploy guide for both repos
+- **Version sync**: bridge publishes → update `manifest.ts` pinned → release otto
+- **Auto-sync**: GitHub Action merges `remorses/kimaki` into bridge every 4h
+
+## WIP branches
+
+- **otto** `feat/skills` — Skills management module (parser, discovery, install, cache, CLI commands). Not merged to master.
+- **bridge** `feat/silent-prompt` — `--silent-prompt` option for `kimaki send`. Pushed to origin, not merged to main.
+
 ## Agent Skills Ecosystem (research 2026-04-07)
 
 - **Specification**: agentskills.io — SKILL.md = YAML frontmatter (name, description) + Markdown body. Progressive disclosure: metadata → instructions → resources on demand.

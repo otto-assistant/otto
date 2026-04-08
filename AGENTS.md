@@ -165,12 +165,47 @@ pnpm test:watch     # watch mode
 
 6 тест-файлів, **25** тестів. Тести `detect.test.ts` та `health.test.ts` повільні (≈6с кожен) бо викликають `npm list -g`.
 
+## Ecosystem
+
+Otto — частина екосистеми з двох репо під GitHub org `otto-assistant`:
+
+| Repo | npm name | Location | Default branch | Role |
+|------|----------|----------|----------------|------|
+| **otto** | `@otto-assistant/otto` | `/data/projects/otto` | `master` | Wrapper CLI: install, upgrade, config, skills |
+| **bridge** | `@otto-assistant/bridge` | `/data/projects/bridge` | `main` | Fork of kimaki — Discord bot + AI bridge |
+
+### Bridge (kimaki fork)
+
+Bridge — форк `remorses/kimaki`, опублікований як `@otto-assistant/bridge`. Відстежує upstream через GitHub Action (auto-merge кожні 4 години). Otto-specific зміни документовані у `/data/projects/bridge/OTTO_AGENTS.md`.
+
+**Зв'язок**: `otto/src/manifest.ts` → `pinned["@otto-assistant/bridge"]` визначає яку версію bridge ставить `otto upgrade stable`.
+
+### Cross-repo dev flow
+
+Детальний workflow: **`docs/DEV-WORKFLOW.md`**
+
+Коротко:
+1. Bridge: PR → merge → CI publishes `@otto-assistant/bridge@X.Y.Z`
+2. Otto: оновити `manifest.ts` pinned → release otto
+
+### Поточні WIP бранчі
+
+| Repo | Branch | Description |
+|------|--------|-------------|
+| otto | `feat/skills` | Skills management module (not merged to master) |
+| bridge | `feat/silent-prompt` | `--silent-prompt` option for `kimaki send` (pushed, not merged) |
+
 ## Документація
 
 | Документ | Опис |
 |----------|------|
+| `docs/DEV-WORKFLOW.md` | **Головний довідник** — розробка, тести, деплой обох репо |
 | `docs/plans/2026-04-02-otto-distribution-design.md` | Design doc — архітектура, рішення, команди |
 | `docs/plans/2026-04-02-otto-implementation-plan.md` | Implementation plan — 8 задач з кодом |
+| `docs/plans/2026-04-06-otto-ai-org-design.md` | GitHub org + fork setup design |
+| `docs/plans/2026-04-06-otto-ai-org-implementation-plan.md` | Org implementation plan |
+| `docs/plans/2026-04-07-otto-skills-repository-design.md` | Skills ecosystem design |
+| `docs/plans/2026-04-07-otto-skills-implementation-plan.md` | Skills implementation plan |
 | `MEMORY.md` | Короткі нотатки для агентів (версія, planStableUpgrades, kimaki) |
 
 ## Memory
