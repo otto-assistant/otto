@@ -44,6 +44,12 @@ export function ensureTenantMemoryLayout(memoryPath: string): TenantInitResult {
   const mempalacePath = path.join(memoryPath, "mempalace")
   if (ensureDir(mempalacePath)) created.push("mempalace/")
 
+  const kimakiPath = path.join(memoryPath, "kimaki")
+  if (ensureDir(kimakiPath)) created.push("kimaki/")
+
+  const opencodePath = path.join(memoryPath, "opencode")
+  if (ensureDir(opencodePath)) created.push("opencode/")
+
   for (const fileName of ["AGENTS.md", "soul.md", "persona.md"]) {
     const filePath = path.join(memoryPath, fileName)
     if (ensureFile(filePath)) created.push(fileName)
@@ -70,31 +76,43 @@ export function ensureTenantScaffold(tenantPath: string): TenantInitResult {
     const compose = [
       "services:",
       "  otto:",
-      "    image: otto-assistant/otto:stable",
+      "    image: ghcr.io/otto-assistant/otto:stable",
       "    env_file:",
       "      - .env",
-      "    environment:",
-      "      - OTTO_MODE=${OTTO_MODE:-safe}",
       "    volumes:",
       "      - ./projects:/workspace/projects",
       "      - ./memory:/workspace/memory",
+      "      - ./memory/kimaki:/root/.kimaki",
+      "      - ./memory/opencode:/root/.config/opencode",
       "    working_dir: /workspace",
+      "    restart: unless-stopped",
       "",
     ].join("\n")
     fs.writeFileSync(composePath, compose, "utf-8")
     created.push("compose.yml")
 
-    const envPath = path.join(tenantPath, ".env.example")
+    const envPath = path.join(tenantPath, ".env")
     const envContent = [
       `COMPOSE_PROJECT_NAME=${projectName}`,
+      "",
+      "# ===== Required =====",
+      "# Discord bot token — https://discord.com/developers/applications",
+      "# Kimaki reads this env var in non-interactive/headless mode",
+      "KIMAKI_BOT_TOKEN=",
+      "",
+      "# AI provider (choose one)",
+      "# OPENAI_API_KEY=sk-...",
+      "# ANTHROPIC_API_KEY=sk-ant-...",
+      "# GOOGLE_API_KEY=...",
+      "",
+      "# ===== Optional =====",
+      "# Runtime mode: safe (default) or admin (elevated host access)",
       "OTTO_MODE=safe",
-      "# Optional override:",
-      "# OTTO_IMAGE=otto-assistant/otto:edge",
       "",
     ].join("\n")
     if (ensureFile(envPath)) {
       fs.writeFileSync(envPath, envContent, "utf-8")
-      created.push(".env.example")
+      created.push(".env")
     }
   }
 

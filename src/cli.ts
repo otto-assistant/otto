@@ -27,6 +27,7 @@ import {
   getAllIndexedSkills,
   listInstalledSkills,
   installSkillFromIndex,
+  installSkillsBaseline,
   removeSkill,
   ensureSkillsIndex,
   getConfiguredRepos,
@@ -35,6 +36,7 @@ import {
   type SkillIndexEntry,
   type SkillMeta,
 } from "./skills.js"
+import { GENTLEMAN_SKILLS_BASELINE } from "./skills-baseline.js"
 
 const args = process.argv.slice(2)
 const command = args[0] ?? ""
@@ -545,6 +547,32 @@ async function cmdTenant(subArgs: string[]): Promise<void> {
   const tenantCommand = subArgs[0] ?? ""
   const tenantPathArg = subArgs[1]
 
+  if (tenantCommand === "skills") {
+    const action = subArgs[1] ?? ""
+    const pathArg = subArgs[2]
+    if (action !== "bootstrap" || !pathArg) {
+      console.log("Usage: otto tenant skills bootstrap <path>")
+      process.exit(1)
+    }
+
+    const tenantPath = path.resolve(pathArg)
+    const skillsDir = path.join(tenantPath, "memory", "opencode", "skills")
+
+    ensureSkillsIndex()
+    const report = installSkillsBaseline(GENTLEMAN_SKILLS_BASELINE, skillsDir)
+
+    console.log(`Skills baseline bootstrap: ${tenantPath}`)
+    console.log(`  Installed: ${report.installed.length > 0 ? report.installed.join(", ") : "(none)"}`)
+    console.log(`  Already present: ${report.alreadyPresent.length > 0 ? report.alreadyPresent.join(", ") : "(none)"}`)
+    if (report.failed.length > 0) {
+      console.log(`  Failed: ${report.failed.join(", ")}`)
+      process.exitCode = 2
+    } else {
+      console.log("  Failed: (none)")
+    }
+    return
+  }
+
   if (!tenantPathArg) {
     console.log("Usage: otto tenant <init|up|down|status|logs> <path>")
     process.exit(1)
@@ -561,6 +589,46 @@ async function cmdTenant(subArgs: string[]): Promise<void> {
         console.log(`Tenant scaffold ready: ${tenantPath}`)
         console.log(`Created: ${result.created.join(", ")}`)
       }
+      console.log(`
+Next steps — get your tenant running in 3 steps:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1: Create a Discord Bot
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Open https://discord.com/developers/applications
+  2. Click "New Application" → give it a name → Create
+  3. Go to "Bot" tab → Click "Reset Token" → Copy the token
+  4. Under "Privileged Gateway Intents" enable:
+     ✅ Message Content Intent
+     ✅ Server Members Intent (optional)
+  5. Go to "OAuth2" tab → "URL Generator"
+     Scopes: bot
+     Permissions: Send Messages, Read Message History, Add Reactions
+  6. Open the generated URL → add bot to your Discord server
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 2: Configure your tenant
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Edit ${tenantPath}/.env with your bot token:
+
+    KIMAKI_BOT_TOKEN=your-bot-token-here
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3: Start your tenant
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  docker compose -f ${tenantPath}/compose.yml up -d
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Useful commands:
+  otto tenant status ${tenantPathArg}   — check health
+  otto tenant logs ${tenantPathArg}     — view logs
+  otto tenant down ${tenantPathArg}     — stop tenant
+  otto tenant skills bootstrap ${tenantPathArg} — install baseline skills
+`)
       return
     }
     case "up": {
@@ -587,7 +655,8 @@ async function cmdTenant(subArgs: string[]): Promise<void> {
         console.log(`  ${icon} ${item.name}: ${item.message}`)
       }
       const composeExists = fs.existsSync(path.join(tenantPath, "compose.yml"))
-      if (composeExists) {
+      const skipComposePs = process.env.OTTO_SKIP_COMPOSE_PS === "1"
+      if (composeExists && !skipComposePs) {
         try {
           runCompose(tenantPath, ["ps"])
         } catch {
@@ -597,7 +666,7 @@ async function cmdTenant(subArgs: string[]): Promise<void> {
       return
     }
     default:
-      console.log("Usage: otto tenant <init|up|down|status|logs> <path>")
+      console.log("Usage: otto tenant <init|up|down|status|logs> <path> | otto tenant skills bootstrap <path>")
       process.exit(1)
   }
 }
@@ -638,6 +707,7 @@ Usage:
   otto tenant down <path>   Stop tenant with docker compose
   otto tenant status <path> Show tenant preflight + compose status
   otto tenant logs <path>   Show tenant logs (add --follow)
+  otto tenant skills bootstrap <path> Install baseline skills for tenant
 
   otto install              Legacy: install missing npm packages + configure
   otto upgrade              Legacy: upgrade to stable (manifest-pinned) versions

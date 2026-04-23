@@ -18,8 +18,20 @@ Tenant identity is based on compose working directory and runtime config, not a 
 `compose.yml` defines the default image and tag. `.env` can override image/tag when needed.
 
 Release channels:
-- `stable`: manually promoted tested tags.
-- `edge`: auto-updated in staging only.
+- `edge`: built and pushed on every `master` push.
+- `stable`: built and pushed only from release tags `vX.Y.Z`.
+
+Tag policy:
+- `master` → `ghcr.io/otto-assistant/otto:edge`, `ghcr.io/otto-assistant/otto:edge-<sha>`
+- `vX.Y.Z` → `ghcr.io/otto-assistant/otto:stable`, `ghcr.io/otto-assistant/otto:X.Y.Z`, optional `latest`
+
+## Build Source Modes
+Two source modes are required:
+
+1. `published` (default): install pinned upstreams from npm in Docker build.
+2. `local`: install upstream tarballs from local `artifacts/` directory to avoid npm publish during development.
+
+Local mode supports fast iteration by building image directly from local code and local packed dependencies.
 
 ## Runtime Mount Model
 Required bind mounts:
@@ -50,6 +62,46 @@ Phase C commands, built over compose-per-tenant:
 - `otto tenant logs <path> [--follow]`
 
 All commands are path-driven and idempotent.
+
+## Production Pipeline
+Two workflows are required:
+
+1. Edge workflow (push to `master`): build, test, smoke-check, push edge tags to GHCR.
+2. Stable workflow (tag `vX.Y.Z`): build, test, smoke-check, push stable tags to GHCR, publish release summary.
+
+Quality gates before push:
+- `pnpm build`
+- `pnpm test`
+- container smoke checks (`otto --help`, `bridge --help`, `opencode --help`)
+- tenant bootstrap smoke (`otto tenant init` in temp dir)
+
+## Update Policy
+Pinned versions in `src/manifest.ts` remain the single source of truth for bundled upstream versions.
+
+Update flow:
+1. Bump pinned bridge/opencode versions in manifest.
+2. Merge to `master` (edge image updates).
+3. Validate edge runtime.
+4. Cut `vX.Y.Z` tag for stable rollout.
+
+Rollback flow:
+- redeploy previous immutable version tag (`X.Y.(Z-1)`) in tenant compose files, then `docker compose up -d`.
+
+## Production Documentation Set
+Required docs for operators:
+- `docs/PRODUCTION-QUICKSTART.md`
+- `docs/PRODUCTION-RUNBOOK.md`
+- `docs/RELEASE-AND-UPGRADE-POLICY.md`
+- `docs/TROUBLESHOOTING.md`
+
+## Skills Baseline Distribution
+Otto must ship a curated “gentleman set” of skills as part of production onboarding.
+
+Policy:
+- baseline list is versioned in Otto source and released with each image tag.
+- bootstrap installs missing baseline skills but does not remove user-added skills.
+- tenant onboarding prints and supports `otto tenant skills bootstrap <path>`.
+- optional `--with-skills` mode can run bootstrap immediately after `tenant init`.
 
 ## Error Handling and Safety
 Preflight checks before `up`:

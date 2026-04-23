@@ -43,10 +43,13 @@ export {
   fetchRepoFile,
   listInstalledSkills,
   installSkillFromIndex,
+  installSkillsBaseline,
   removeSkill,
   getConfiguredRepos,
 } from "./skills.js"
 export type { SkillMeta, SkillIndexEntry, SkillsIndex, RepoSyncResult } from "./skills.js"
+export { GENTLEMAN_SKILLS_BASELINE } from "./skills-baseline.js"
+export type { SkillsBootstrapReport } from "./skills-baseline.js"
 export {
   deriveComposeProjectName,
   resolveTenantImage,

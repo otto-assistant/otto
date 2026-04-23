@@ -1,0 +1,110 @@
+#!/bin/bash
+# Otto — zero-install Docker wrapper
+# Usage:
+#   bash otto tenant init /path/to/tenant
+#   bash otto tenant up /path/to/tenant
+#   bash otto tenant down /path/to/tenant
+#   bash otto tenant status /path/to/tenant
+#   bash otto tenant logs /path/to/tenant [--follow]
+#
+# Or install globally:
+#   curl -fsSL https://raw.githubusercontent.com/otto-assistant/otto/master/otto -o /usr/local/bin/otto && chmod +x /usr/local/bin/otto
+
+set -euo pipefail
+
+IMAGE="${OTTO_IMAGE:-ghcr.io/otto-assistant/otto:stable}"
+
+if [ "$#" -eq 0 ]; then
+  exec docker run --rm --entrypoint otto "$IMAGE" "--help"
+fi
+
+case "$1" in
+  tenant)
+    if [ -z "${2:-}" ]; then
+      echo "Usage: otto tenant <init|up|down|status|logs> <path>"
+      echo "   or: otto tenant skills bootstrap <path>"
+      exit 1
+    fi
+
+    ACTION="$2"
+    TENANT_PATH="${3:-}"
+
+    if [ "$ACTION" = "skills" ]; then
+      SKILLS_ACTION="${3:-}"
+      TENANT_PATH="${4:-}"
+      if [ "$SKILLS_ACTION" != "bootstrap" ] || [ -z "$TENANT_PATH" ]; then
+        echo "Usage: otto tenant skills bootstrap <path>"
+        exit 1
+      fi
+    fi
+
+    if [ -z "$TENANT_PATH" ]; then
+      echo "Usage: otto tenant <init|up|down|status|logs> <path>"
+      echo "   or: otto tenant skills bootstrap <path>"
+      exit 1
+    fi
+    # Resolve to absolute path for Docker mount
+    ABS_PATH="$(cd "$TENANT_PATH" 2>/dev/null && pwd 2>/dev/null || echo "$(cd "$(dirname "$TENANT_PATH")" && pwd)/$(basename "$TENANT_PATH")")"
+
+    case "$ACTION" in
+      init)
+        # init: mount parent dir (tenant may not exist yet)
+        PARENT_DIR="$(dirname "$ABS_PATH")"
+        exec docker run --rm \
+          --entrypoint otto \
+          --user "$(id -u):$(id -g)" \
+          -v "$PARENT_DIR:$PARENT_DIR" \
+          "$IMAGE" \
+          tenant init "$ABS_PATH"
+        ;;
+      up|down)
+        # up/down: run docker compose on host (no nested Docker required)
+        if [ "$ACTION" = "up" ]; then
+          exec docker compose -f "$ABS_PATH/compose.yml" up -d
+        else
+          exec docker compose -f "$ABS_PATH/compose.yml" down
+        fi
+        ;;
+      status)
+        docker run --rm \
+          --entrypoint otto \
+          --user "$(id -u):$(id -g)" \
+          -e OTTO_SKIP_COMPOSE_PS=1 \
+          -v "$ABS_PATH:$ABS_PATH" \
+          "$IMAGE" \
+          tenant status "$ABS_PATH"
+
+        echo ""
+        docker compose -f "$ABS_PATH/compose.yml" ps || true
+        exit 0
+        ;;
+      logs)
+        FOLLOW=""
+        [ "${4:-}" = "--follow" ] && FOLLOW="--follow"
+        exec docker compose -f "$ABS_PATH/compose.yml" logs $FOLLOW
+        ;;
+      skills)
+        HOME_DIR="$ABS_PATH/memory/opencode-home"
+        mkdir -p "$HOME_DIR"
+        docker run --rm \
+          --entrypoint otto \
+          --user "$(id -u):$(id -g)" \
+          -e HOME="$HOME_DIR" \
+          -v "$ABS_PATH:$ABS_PATH" \
+          "$IMAGE" \
+          tenant skills bootstrap "$ABS_PATH"
+        exit $?
+        ;;
+      *)
+        echo "Unknown tenant action: $ACTION"
+        echo "Usage: otto tenant <init|up|down|status|logs> <path>"
+        echo "   or: otto tenant skills bootstrap <path>"
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    # Generic: pass through to otto CLI inside container
+    exec docker run --rm --entrypoint otto "$IMAGE" "$@"
+    ;;
+esac
