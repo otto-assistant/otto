@@ -17,6 +17,7 @@ import {
   getAllIndexedSkills,
   getConfiguredRepos,
   installSkillFromIndex,
+  installSkillsBaseline,
   fetchRepoSkillsIndex,
   type SkillIndexEntry,
   type SkillsIndex,
@@ -374,6 +375,62 @@ describe("installSkillFromIndex", () => {
     const result = installSkillFromIndex("nonexistent", tmpTarget, tmpIndex)
     expect(result).toBe(false)
   })
+})
+
+// ---------------------------------------------------------------------------
+// installSkillsBaseline
+// ---------------------------------------------------------------------------
+
+describe("installSkillsBaseline", () => {
+  let tmpTarget: string
+  let tmpIndex: string
+
+  beforeEach(() => {
+    tmpTarget = makeTmp()
+    tmpIndex = path.join(makeTmp(), "skills-index.json")
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpTarget, { recursive: true, force: true })
+    fs.rmSync(path.dirname(tmpIndex), { recursive: true, force: true })
+  })
+
+  it("reports installed, already present, and failed skills", () => {
+    // preinstall one skill
+    writeSkillMd(
+      path.join(tmpTarget, "existing-skill"),
+      `---\nname: existing-skill\ndescription: Existing\n---\n`,
+    )
+
+    const idx: SkillsIndex = {
+      version: 1,
+      updated: new Date().toISOString(),
+      repos: {
+        "otto-assistant/skills": {
+          fetched: new Date().toISOString(),
+          skills: [
+            {
+              name: "otto-subagent-threads",
+              description: "Enforce Discord threads",
+              source: "otto-assistant/skills",
+              path: "skills/otto-subagent-threads",
+            },
+          ],
+        },
+      },
+    }
+    saveSkillsIndex(idx, tmpIndex)
+
+    const result = installSkillsBaseline([
+      "existing-skill",
+      "otto-subagent-threads",
+      "missing-skill",
+    ], tmpTarget, tmpIndex)
+
+    expect(result.alreadyPresent).toContain("existing-skill")
+    expect(result.installed).toContain("otto-subagent-threads")
+    expect(result.failed).toContain("missing-skill")
+  }, 20_000)
 })
 
 // ---------------------------------------------------------------------------

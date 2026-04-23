@@ -23,6 +23,7 @@ export const OPENCODE_SKILLS_DIR = (): string => {
 
 /** Default skill repos — curated, known to have quality skills */
 export const DEFAULT_SKILL_REPOS: string[] = [
+  "otto-assistant/bridge",
   "otto-assistant/skills",
   "anthropics/skills",
   "vercel-labs/agent-skills",
@@ -434,6 +435,62 @@ export function installSkillFromIndex(
   }
 
   return true
+}
+
+/**
+ * Install a baseline list of skills without removing user-installed ones.
+ */
+export function installSkillsBaseline(
+  skillNames: string[],
+  targetDir?: string,
+  indexPath?: string,
+): { installed: string[]; alreadyPresent: string[]; failed: string[] } {
+  const installed: string[] = []
+  const alreadyPresent: string[] = []
+  const failed: string[] = []
+
+  const target = targetDir ?? OPENCODE_SKILLS_DIR()
+  fs.mkdirSync(target, { recursive: true })
+
+  const existing = new Set(listInstalledSkills(target).map((s) => s.name))
+
+  for (const name of skillNames) {
+    if (existing.has(name)) {
+      alreadyPresent.push(name)
+      continue
+    }
+
+    const ok = installSkillFromIndex(name, target, indexPath) || installSkillFromBuiltIn(name, target)
+    if (ok) {
+      installed.push(name)
+      existing.add(name)
+    } else {
+      failed.push(name)
+    }
+  }
+
+  return { installed, alreadyPresent, failed }
+}
+
+function installSkillFromBuiltIn(skillName: string, targetDir: string): boolean {
+  const builtInRoots = [
+    "/usr/local/lib/node_modules/@otto-assistant/bridge/skills",
+    "/usr/lib/node_modules/@otto-assistant/bridge/skills",
+    "/usr/lib/node_modules/kimaki/skills",
+  ]
+
+  for (const root of builtInRoots) {
+    const sourceDir = path.join(root, skillName)
+    const sourceSkillMd = path.join(sourceDir, "SKILL.md")
+    if (!fs.existsSync(sourceSkillMd)) continue
+
+    const destDir = path.join(targetDir, skillName)
+    fs.mkdirSync(path.dirname(destDir), { recursive: true })
+    fs.cpSync(sourceDir, destDir, { recursive: true })
+    return true
+  }
+
+  return false
 }
 
 /**

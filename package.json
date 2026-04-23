@@ -1,7 +1,7 @@
 {
   "name": "@otto-assistant/otto",
-  "version": "0.1.0",
-  "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + opencode-agent-memory",
+  "version": "0.1.1",
+  "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + mempalace",
   "type": "module",
   "bin": {
     "otto": "./dist/cli.js"
@@ -15,8 +15,17 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["src", "dist"],
-  "keywords": ["otto", "opencode", "kimaki", "ai-agent", "distribution"],
+  "files": [
+    "src",
+    "dist"
+  ],
+  "keywords": [
+    "otto",
+    "opencode",
+    "kimaki",
+    "ai-agent",
+    "distribution"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,6 +34,7 @@
   "scripts": {
     "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
+    "build:artifacts": "./scripts/build-local-artifacts.sh",
     "prepublishOnly": "pnpm build",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -34,7 +44,7 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@types/node": "^22.19.17",
     "typescript": "^5.7.3",
     "vitest": "^3.2.0"
   }
