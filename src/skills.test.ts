@@ -428,7 +428,11 @@ describe("installSkillsBaseline", () => {
     ], tmpTarget, tmpIndex)
 
     expect(result.alreadyPresent).toContain("existing-skill")
-    expect(result.installed).toContain("otto-subagent-threads")
+    if (hasGhAuth()) {
+      expect(result.installed).toContain("otto-subagent-threads")
+    } else {
+      expect(result.failed).toContain("otto-subagent-threads")
+    }
     expect(result.failed).toContain("missing-skill")
   }, 20_000)
 })

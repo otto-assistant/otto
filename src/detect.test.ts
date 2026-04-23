@@ -7,8 +7,9 @@ describe("detect", () => {
     expect(result).toBeNull()
   })
 
-  // These tests require kimaki to be globally installed (skipped on CI)
-  const describeIfInstalled = process.env.CI ? describe.skip : describe
+  // These tests require kimaki to be globally installed
+  const hasKimakiInstalled = getInstalledVersion("kimaki") !== null
+  const describeIfInstalled = hasKimakiInstalled ? describe : describe.skip
 
   describeIfInstalled("with kimaki installed", () => {
     it("detects an existing global package", () => {
