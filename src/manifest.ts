@@ -9,17 +9,17 @@ export interface Manifest {
 }
 
 export const MANIFEST: Manifest = {
-  version: "0.1.0",
+  version: "0.1.1",
   packages: {
     "opencode-ai": ">=1.0.115",
-    "@otto-assistant/bridge": ">=0.4.90",
+    "@otto-assistant/bridge": ">=0.6.0",
   },
   pinned: {
     "opencode-ai": "1.2.20",
-    "@otto-assistant/bridge": "0.4.90",
+    "@otto-assistant/bridge": "0.6.2",
   },
   plugins: [
-    "opencode-agent-memory",
+    "mempalace",
   ],
 }
 

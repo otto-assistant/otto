@@ -1,0 +1,11 @@
+node_modules
+dist
+*.tsbuildinfo
+.git
+docs
+web
+uploads
+tmp
+.opencode
+*.test.ts
+coverage

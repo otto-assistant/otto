@@ -39,7 +39,7 @@ function ensureFile(filePath: string): boolean {
 
 export function ensureTenantMemoryLayout(memoryPath: string): TenantInitResult {
   const created: string[] = []
-  if (ensureDir(memoryPath)) created.push("memory/")
+  ensureDir(memoryPath)
 
   const mempalacePath = path.join(memoryPath, "mempalace")
   if (ensureDir(mempalacePath)) created.push("mempalace/")
@@ -60,8 +60,9 @@ export function ensureTenantScaffold(tenantPath: string): TenantInitResult {
   if (ensureDir(projectsPath)) created.push("projects/")
 
   const memoryPath = path.join(tenantPath, "memory")
+  if (ensureDir(memoryPath)) created.push("memory/")
   const memoryResult = ensureTenantMemoryLayout(memoryPath)
-  created.push(...memoryResult.created.map((item) => `memory/${item}`))
+  created.push(...memoryResult.created)
 
   const composePath = path.join(tenantPath, "compose.yml")
   if (ensureFile(composePath)) {
