@@ -613,7 +613,7 @@ Step 2: Configure your tenant
 
   Edit ${tenantPath}/.env with your bot token:
 
-    KIMAKI_BOT_TOKEN=your-bot-token-here
+    DISCORD_BOT_TOKEN=your-bot-token-here
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Step 3: Start your tenant
