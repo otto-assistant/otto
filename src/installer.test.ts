@@ -17,8 +17,8 @@ describe("installer", () => {
 
     expect(result).toContain("opencode-ai")
     expect(result).not.toContain("kimaki")
-    // opencode-agent-memory is a plugin, not a global npm package
-    expect(result).not.toContain("opencode-agent-memory")
+    // mempalace is a plugin, not a global npm package
+    expect(result).not.toContain("mempalace")
   })
 
   it("planStableUpgrades returns empty when all packages match pinned", () => {
