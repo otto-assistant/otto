@@ -1,6 +1,6 @@
 {
   "name": "@otto-assistant/otto",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Otto — terminal UI distribution wrapper for opencode + kimaki + mempalace",
   "type": "module",
   "bin": {
