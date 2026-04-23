@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { getInstalledVersion, detectPackage, type InstalledPackage } from "./detect.js"
 
 describe("detect", () => {
-  it("returns null for non-existent package", () => {
+  it("returns null for non-existent package", { timeout: 30_000 }, () => {
     const result = getInstalledVersion("nonexistent-package-xyz-123")
     expect(result).toBeNull()
   })

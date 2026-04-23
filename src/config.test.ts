@@ -18,20 +18,20 @@ import os from "node:os"
 describe("config", () => {
   it("adds plugin to empty config", () => {
     const config: OpenCodeConfig = {}
-    const result = mergePlugins(config, "opencode-agent-memory")
-    expect(result.plugin).toEqual(["opencode-agent-memory"])
+    const result = mergePlugins(config, "mempalace")
+    expect(result.plugin).toEqual(["mempalace"])
   })
 
   it("appends plugin to existing array", () => {
     const config: OpenCodeConfig = { plugin: ["existing-plugin"] }
-    const result = mergePlugins(config, "opencode-agent-memory")
-    expect(result.plugin).toEqual(["existing-plugin", "opencode-agent-memory"])
+    const result = mergePlugins(config, "mempalace")
+    expect(result.plugin).toEqual(["existing-plugin", "mempalace"])
   })
 
   it("does not duplicate existing plugin", () => {
-    const config: OpenCodeConfig = { plugin: ["opencode-agent-memory"] }
-    const result = mergePlugins(config, "opencode-agent-memory")
-    expect(result.plugin).toEqual(["opencode-agent-memory"])
+    const config: OpenCodeConfig = { plugin: ["mempalace"] }
+    const result = mergePlugins(config, "mempalace")
+    expect(result.plugin).toEqual(["mempalace"])
   })
 
   it("preserves other config fields", () => {
@@ -40,10 +40,10 @@ describe("config", () => {
       plugin: ["existing"],
       provider: { cursor: { name: "Cursor" } },
     }
-    const result = mergePlugins(config, "opencode-agent-memory")
+    const result = mergePlugins(config, "mempalace")
     expect(result.model).toBe("gpt-4")
     expect(result.provider).toEqual({ cursor: { name: "Cursor" } })
-    expect(result.plugin).toEqual(["existing", "opencode-agent-memory"])
+    expect(result.plugin).toEqual(["existing", "mempalace"])
   })
 
   it("readOttoConfig returns defaults when otto.json missing", () => {

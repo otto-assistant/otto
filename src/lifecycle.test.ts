@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { hasKimakiBinary, isKimakiRunning, restartKimaki } from "./lifecycle.js"
+import { hasKimakiBinary, isKimakiRunning, restartKimaki, detectBinary } from "./lifecycle.js"
 
 describe("lifecycle", () => {
+  it("detectBinary returns string or null", () => {
+    const result = detectBinary()
+    expect(result === null || typeof result === "string").toBe(true)
+  })
+
   it("hasKimakiBinary returns boolean", () => {
     const result = hasKimakiBinary()
     expect(typeof result).toBe("boolean")
@@ -13,10 +18,6 @@ describe("lifecycle", () => {
   })
 
   it("restartKimaki is a function", () => {
-    expect(typeof restartKimaki).toBe("function")
-  })
-
-  it("restartKimaki throws descriptive error when kimaki not found", () => {
     expect(typeof restartKimaki).toBe("function")
   })
 })
