@@ -15,9 +15,13 @@ import {
   type OpenCodeConfig,
 } from "./config.js"
 import { installMissingPackages, upgradePackage, planStableUpgrades } from "./installer.js"
+import fs from "node:fs"
+import path from "node:path"
 import { hasKimakiBinary, restartKimaki } from "./lifecycle.js"
-import { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
+import { checkPackagePresence, checkConfigHealth, checkDirectoryHealth, checkTenantHealth } from "./health.js"
 import { syncUpstreams } from "./sync.js"
+import { runCompose } from "./docker.js"
+import { ensureTenantScaffold, resolveTenantMode } from "./tenant.js"
 import {
   searchSkills,
   getAllIndexedSkills,
@@ -264,9 +268,9 @@ async function cmdDoctor(): Promise<void> {
     hasErrors = true
   }
   if (configHealth.memoryPluginEnabled) {
-    console.log("  ✓ opencode-agent-memory plugin enabled")
+    console.log("  ✓ mempalace plugin enabled")
   } else {
-    console.log("  ✗ opencode-agent-memory plugin NOT enabled — run `otto install`")
+    console.log("  ✗ mempalace plugin NOT enabled — run `otto install`")
     hasErrors = true
   }
   if (configHealth.subagentPolicyInjected) {
@@ -537,6 +541,67 @@ function cmdSkillsRepos(): void {
   console.log(`\n${repos.length} repo(s) configured.`)
 }
 
+async function cmdTenant(subArgs: string[]): Promise<void> {
+  const tenantCommand = subArgs[0] ?? ""
+  const tenantPathArg = subArgs[1]
+
+  if (!tenantPathArg) {
+    console.log("Usage: otto tenant <init|up|down|status|logs> <path>")
+    process.exit(1)
+  }
+
+  const tenantPath = path.resolve(tenantPathArg)
+
+  switch (tenantCommand) {
+    case "init": {
+      const result = ensureTenantScaffold(tenantPath)
+      if (result.created.length === 0) {
+        console.log(`Tenant scaffold already exists: ${tenantPath}`)
+      } else {
+        console.log(`Tenant scaffold ready: ${tenantPath}`)
+        console.log(`Created: ${result.created.join(", ")}`)
+      }
+      return
+    }
+    case "up": {
+      const mode = resolveTenantMode(process.env.OTTO_MODE)
+      if (mode === "admin") {
+        console.log("⚠ OTTO_MODE=admin enabled: tenant has elevated runtime profile.")
+      }
+      runCompose(tenantPath, ["up", "-d"])
+      return
+    }
+    case "down":
+      runCompose(tenantPath, ["down"])
+      return
+    case "logs": {
+      const follow = subArgs.includes("--follow") ? ["--follow"] : []
+      runCompose(tenantPath, ["logs", ...follow])
+      return
+    }
+    case "status": {
+      const health = checkTenantHealth({ tenantPath })
+      console.log(`Tenant status: ${tenantPath}`)
+      for (const item of health) {
+        const icon = item.status === "ok" ? "✓" : item.status === "warn" ? "⚠" : "✗"
+        console.log(`  ${icon} ${item.name}: ${item.message}`)
+      }
+      const composeExists = fs.existsSync(path.join(tenantPath, "compose.yml"))
+      if (composeExists) {
+        try {
+          runCompose(tenantPath, ["ps"])
+        } catch {
+          console.log("  ⚠ docker compose ps failed")
+        }
+      }
+      return
+    }
+    default:
+      console.log("Usage: otto tenant <init|up|down|status|logs> <path>")
+      process.exit(1)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main router
 // ---------------------------------------------------------------------------
@@ -561,14 +626,23 @@ async function main(): Promise<void> {
     case "skills":
       await cmdSkills(args.slice(1))
       break
+    case "tenant":
+      await cmdTenant(args.slice(1))
+      break
     default:
-      console.log(`Otto — terminal UI distribution for opencode + kimaki + opencode-agent-memory
+      console.log(`Otto — terminal UI distribution for opencode + kimaki + mempalace
 
 Usage:
-  otto install              Install missing packages + configure
-  otto upgrade              Upgrade to stable (manifest-pinned) versions
-  otto upgrade stable       Upgrade to manifest-pinned versions
-  otto upgrade latest       Upgrade to npm latest versions
+  otto tenant init <path>   Create compose-first tenant scaffold
+  otto tenant up <path>     Start tenant with docker compose
+  otto tenant down <path>   Stop tenant with docker compose
+  otto tenant status <path> Show tenant preflight + compose status
+  otto tenant logs <path>   Show tenant logs (add --follow)
+
+  otto install              Legacy: install missing npm packages + configure
+  otto upgrade              Legacy: upgrade to stable (manifest-pinned) versions
+  otto upgrade stable       Legacy: upgrade to manifest-pinned versions
+  otto upgrade latest       Legacy: upgrade to npm latest versions
   otto status               Show installed versions + config health
   otto doctor               Validate all integration points
   otto sync                 Trigger upstream sync for all forked repos

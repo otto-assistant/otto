@@ -23,9 +23,9 @@ export {
 export type { OpenCodeConfig, OttoConfig, OttoSubagentThreads, OttoConfigReadStatus, OpenCodeConfigReadStatus } from "./config.js"
 export { installPackage, upgradePackage, installMissingPackages, planStableUpgrades } from "./installer.js"
 export type { UpgradeMode } from "./installer.js"
-export { hasKimakiBinary, isKimakiRunning, restartKimaki } from "./lifecycle.js"
-export { checkPackagePresence, checkConfigHealth, checkDirectoryHealth } from "./health.js"
-export type { HealthResult, PackageCheck, ConfigHealth } from "./health.js"
+export { hasKimakiBinary, isKimakiRunning, restartKimaki, detectBinary } from "./lifecycle.js"
+export { checkPackagePresence, checkConfigHealth, checkDirectoryHealth, checkTenantHealth } from "./health.js"
+export type { HealthResult, PackageCheck, ConfigHealth, TenantHealthInput } from "./health.js"
 export {
   OPENCODE_SKILLS_DIR,
   SKILLS_INDEX_PATH,
@@ -47,3 +47,13 @@ export {
   getConfiguredRepos,
 } from "./skills.js"
 export type { SkillMeta, SkillIndexEntry, SkillsIndex, RepoSyncResult } from "./skills.js"
+export {
+  deriveComposeProjectName,
+  resolveTenantImage,
+  resolveTenantMode,
+  ensureTenantMemoryLayout,
+  ensureTenantScaffold,
+} from "./tenant.js"
+export type { TenantMode, TenantInitResult } from "./tenant.js"
+export { buildComposeCommand, runCompose } from "./docker.js"
+export type { DockerComposeCommand } from "./docker.js"

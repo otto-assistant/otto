@@ -69,7 +69,7 @@ export function checkConfigHealth(): ConfigHealth {
 
   const config = state.status === "ok" ? state.config : {}
   const configuredPlugins = config.plugin ?? []
-  const memoryPluginEnabled = configuredPlugins.includes("opencode-agent-memory")
+  const memoryPluginEnabled = configuredPlugins.includes("mempalace")
 
   const subagentPolicyInjected = subagentPolicyInjectedInPrompts(config)
 
@@ -110,5 +110,49 @@ export function checkDirectoryHealth(): HealthResult[] {
       results.push({ name: label, status: "warn", message: `missing: ${p}` })
     }
   }
+  return results
+}
+
+export interface TenantHealthInput {
+  tenantPath: string
+}
+
+export function checkTenantHealth(input: TenantHealthInput): HealthResult[] {
+  const results: HealthResult[] = []
+  const { tenantPath } = input
+
+  if (fs.existsSync(tenantPath)) {
+    results.push({ name: "tenant path", status: "ok", message: `exists: ${tenantPath}` })
+  } else {
+    results.push({ name: "tenant path", status: "error", message: `missing: ${tenantPath}` })
+    return results
+  }
+
+  const composePath = path.join(tenantPath, "compose.yml")
+  if (fs.existsSync(composePath)) {
+    results.push({ name: "compose.yml", status: "ok", message: "present" })
+  } else {
+    results.push({ name: "compose.yml", status: "error", message: "missing — run `otto tenant init`" })
+  }
+
+  const memoryPath = path.join(tenantPath, "memory")
+  if (fs.existsSync(memoryPath)) {
+    try {
+      fs.accessSync(memoryPath, fs.constants.W_OK)
+      results.push({ name: "memory root", status: "ok", message: "writable" })
+    } catch {
+      results.push({ name: "memory root", status: "error", message: "not writable" })
+    }
+  } else {
+    results.push({ name: "memory root", status: "error", message: "missing — run `otto tenant init`" })
+  }
+
+  const projectsPath = path.join(tenantPath, "projects")
+  if (fs.existsSync(projectsPath)) {
+    results.push({ name: "projects mount", status: "ok", message: "present" })
+  } else {
+    results.push({ name: "projects mount", status: "warn", message: "missing — will be created on first up" })
+  }
+
   return results
 }
